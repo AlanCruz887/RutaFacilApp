@@ -1,6 +1,15 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    "baseUrl": "./", // Define la raíz del proyecto
+    "paths": {
+      "@theme/*": ["src/theme/*"], // Alias para la carpeta "theme"
+      "@screens/*": ["src/screens/*"], // Alias para pantallas
+      "@navigation/*": ["src/navigation/*"], // Alias para navegación
+      "@components/*": ["src/components/*"], // Alias para componentes
+      "@utils/*": ["src/utils/*"], // Alias para utilidades
+      "@assets/*": ["src/assets/*"] // Alias para activos
+    }
   }
 }
