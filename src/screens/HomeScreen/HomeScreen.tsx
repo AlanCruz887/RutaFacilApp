@@ -1,37 +1,51 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Alert, ActivityIndicator } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
+import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
+import * as Location from 'expo-location';
 import axios from 'axios';
+import { API_URL, GOOGLE_API_KEY } from '@env';
 
-const GOOGLE_MAPS_API_KEY = 'TU_API_KEY_GOOGLE'; // Reemplaza con tu clave API de Google Maps
+const GOOGLE_MAPS_API_KEY = GOOGLE_API_KEY; // Reemplaza con tu clave API de Google Maps
 
-const RouteDetailsScreen: React.FC = ({ route, navigation }: any) => {
-  const { routeId } = route.params; // Obtener el ID de la ruta desde los parámetros
-  const [routeDetails, setRouteDetails] = useState<any>(null);
-  const [routeCoordinates, setRouteCoordinates] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+const HomeScreen: React.FC = ({ navigation }: any) => {
+  const [location, setLocation] = useState<Location.LocationObject | null>(null);
+  const [routes, setRoutes] = useState<any[]>([]);
+  const [selectedStop, setSelectedStop] = useState<any | null>(null);
+  const [loading, setLoading] = useState(false);
+  const mapRef = useRef<MapView | null>(null);
+
+  const routeColors = ['#FF0000', '#00FF00', '#0000FF', '#FFA500', '#800080', '#00FFFF'];
 
   useEffect(() => {
-    const fetchRouteDetails = async () => {
-      try {
-        const response = await axios.get(`http://192.168.1.67:3000/api/routes/get-route/${routeId}`);
-        if (response.data.success) {
-          const data = response.data.data;
-          setRouteDetails(data); // Guardar los detalles de la ruta
-          await fetchRoutePolyline(data.stops); // Calcular la polilínea para las calles
-        } else {
-          setError(response.data.message || 'Error al obtener los detalles de la ruta');
-        }
-      } catch (err: any) {
-        setError(err.message || 'Error al realizar la petición');
-      } finally {
-        setLoading(false);
+    (async () => {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permiso denegado', 'No se puede acceder a tu ubicación.');
+        return;
       }
-    };
 
-    fetchRouteDetails();
-  }, [routeId]);
+      const subscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          timeInterval: 1000,
+          distanceInterval: 1,
+        },
+        (currentLocation) => {
+          setLocation(currentLocation);
+          mapRef.current?.animateCamera({
+            center: {
+              latitude: currentLocation.coords.latitude,
+              longitude: currentLocation.coords.longitude,
+            },
+          });
+        }
+      );
+
+      return () => subscription.remove();
+    })();
+  }, []);
 
   const fetchRoutePolyline = async (stops: any[]) => {
     const origin = `${stops[0].latitude},${stops[0].longitude}`;
@@ -47,32 +61,34 @@ const RouteDetailsScreen: React.FC = ({ route, navigation }: any) => {
       );
 
       if (response.data.routes.length) {
-        const points = decodePolyline(response.data.routes[0].overview_polyline.points);
-        setRouteCoordinates(points); // Almacenar la ruta decodificada
+        return decodePolyline(response.data.routes[0].overview_polyline.points);
       } else {
         console.error('No se pudo calcular la ruta.');
+        return [];
       }
     } catch (error) {
       console.error('Error al calcular la ruta:', error);
+      return [];
     }
   };
 
   const decodePolyline = (encoded: string) => {
-    let points = [];
+    let points: any[] = [];
     let index = 0,
       len = encoded.length;
     let lat = 0,
       lng = 0;
 
     while (index < len) {
-      let b, shift = 0,
+      let b,
+        shift = 0,
         result = 0;
       do {
         b = encoded.charCodeAt(index++) - 63;
         result |= (b & 0x1f) << shift;
         shift += 5;
       } while (b >= 0x20);
-      let dlat = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+      const dlat = result & 1 ? ~(result >> 1) : result >> 1;
       lat += dlat;
 
       shift = 0;
@@ -82,7 +98,7 @@ const RouteDetailsScreen: React.FC = ({ route, navigation }: any) => {
         result |= (b & 0x1f) << shift;
         shift += 5;
       } while (b >= 0x20);
-      let dlng = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+      const dlng = result & 1 ? ~(result >> 1) : result >> 1;
       lng += dlng;
 
       points.push({
@@ -93,97 +109,281 @@ const RouteDetailsScreen: React.FC = ({ route, navigation }: any) => {
     return points;
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#6200ee" />
-        <Text>Cargando detalles de la ruta...</Text>
-      </View>
-    );
-  }
+  const handleExploreRoutesPress = async () => {
+    if (!location) {
+      Alert.alert('Ubicación no disponible', 'Activa la ubicación para buscar rutas cercanas.');
+      return;
+    }
 
-  if (error) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Error: {error}</Text>
-      </View>
-    );
-  }
+    setLoading(true);
+    try {
+      const { latitude, longitude } = location.coords;
+      const response = await axios.post(API_URL+'/routes/get-nearby-routes', {
+        lat: latitude,
+        lon: longitude,
+      });
+
+      if (response.data.success) {
+        const fetchedRoutes = response.data.data;
+
+        const routesWithPolylines = await Promise.all(
+          fetchedRoutes.map(async (route: any) => {
+            const polyline = await fetchRoutePolyline(route.stops);
+            return { ...route, polyline };
+          })
+        );
+
+        setRoutes(routesWithPolylines);
+      } else {
+        Alert.alert('Error', response.data.message || 'No se encontraron rutas cercanas.');
+      }
+    } catch (err) {
+      console.error('Error en Axios:', err);
+      Alert.alert('Error', 'Hubo un problema al obtener las rutas cercanas.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMyLocationPress = () => {
+    if (location && mapRef.current) {
+      const { latitude, longitude } = location.coords;
+      mapRef.current.animateToRegion(
+        {
+          latitude,
+          longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        },
+        1000
+      );
+    }
+  };
+
+  const handleViewRoutePress = () => {
+    if (selectedStop) {
+      navigation.navigate('Rutas', {
+        screen: 'RouteDetails', // Pantalla dentro de RoutesStackNavigator
+        params: { routeId: selectedStop.route_id },
+      });
+    }
+  };
+  
 
   return (
     <View style={styles.container}>
-      <MapView
-        style={styles.map}
-        initialRegion={{
-          latitude: parseFloat(routeDetails.stops[0].latitude),
-          longitude: parseFloat(routeDetails.stops[0].longitude),
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }}
-      >
-        {routeCoordinates && (
-          <Polyline
-            coordinates={routeCoordinates}
-            strokeColor="red"
-            strokeWidth={3}
-          />
-        )}
+      {loading && (
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color="#6200ee" />
+          <Text>Cargando rutas cercanas...</Text>
+        </View>
+      )}
+      <View style={styles.header}>
+        <Text style={styles.title}>RutaFácil</Text>
+      </View>
 
-        {routeDetails.stops.map((stop: any, index: number) => (
-          <Marker
-            key={index}
-            coordinate={{
-              latitude: parseFloat(stop.latitude),
-              longitude: parseFloat(stop.longitude),
-            }}
-            title={`Parada ${stop.sequence}`}
-          >
-            <TouchableOpacity
-              style={styles.markerContainer}
-              onPress={() => navigation.navigate('RouteScreen', { routeId })} // Navegar con el ID de la ruta
+      <View style={styles.mapContainer}>
+        <MapView
+          ref={mapRef}
+          style={styles.map}
+          initialRegion={{
+            latitude: 20.17427,
+            longitude: -98.04875,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
+          }}
+        >
+          {location && (
+            <Marker
+              coordinate={{
+                latitude: location.coords.latitude,
+                longitude: location.coords.longitude,
+              }}
+              anchor={{ x: 0.5, y: 0.5 }}
             >
-              <Text style={styles.markerText}>Ir a Ruta</Text>
+              <View style={styles.pointMarker} />
+            </Marker>
+          )}
+
+          {routes.map((route, index) => {
+            const color = routeColors[index % routeColors.length];
+            return (
+              <React.Fragment key={route.route_id}>
+                {route.polyline && (
+                  <Polyline coordinates={route.polyline} strokeColor={color} strokeWidth={3} />
+                )}
+                {route.stops.map((stop: any) => (
+                  <Marker
+                    key={stop.stop_id}
+                    coordinate={{
+                      latitude: parseFloat(stop.latitude),
+                      longitude: parseFloat(stop.longitude),
+                    }}
+                    onPress={() => setSelectedStop({ ...stop, route_id: route.route_id })}
+                  />
+                ))}
+              </React.Fragment>
+            );
+          })}
+        </MapView>
+      </View>
+
+      {selectedStop && (
+        <View style={styles.infoBox}>
+          <Text style={styles.infoTitle}>{selectedStop.stop_name}</Text>
+          <Text style={styles.infoDescription}>{`Ruta: ${selectedStop.route_id}`}</Text>
+          <View style={styles.buttonRow}>
+            <TouchableOpacity onPress={handleViewRoutePress} style={styles.routeButton}>
+              <Text style={styles.routeButtonText}>Ver Ruta</Text>
             </TouchableOpacity>
-          </Marker>
-        ))}
-      </MapView>
+            <TouchableOpacity onPress={() => setSelectedStop(null)} style={styles.closeButton}>
+              <Text style={styles.closeButtonText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      <View style={styles.actionsContainer}>
+        <TouchableOpacity style={styles.actionButton} onPress={handleExploreRoutesPress}>
+          <Ionicons name="map-outline" size={24} color="#fff" />
+          <Text style={styles.actionText}>Explorar Rutas</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.actionButton} onPress={handleMyLocationPress}>
+          <Ionicons name="navigate-outline" size={24} color="#fff" />
+          <Text style={styles.actionText}>Mi Ubicación</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
 
-export default RouteDetailsScreen;
-
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    backgroundColor: '#f4f4f4',
+    paddingTop: Platform.OS === 'ios' ? Constants.statusBarHeight : 0,
+  },
+  header: {
+    backgroundColor: '#6200ee',
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+  },
+  title: {
+    fontSize: 22,
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  mapContainer: {
     flex: 1,
   },
   map: {
     ...StyleSheet.absoluteFillObject,
   },
-  loaderContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  pointMarker: {
+    width: 15,
+    height: 15,
+    borderRadius: 7.5,
+    backgroundColor: '#6200ee',
+    borderWidth: 2,
+    borderColor: '#fff',
   },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
+  infoBox: {
+    position: 'absolute',
+    top: 140,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 10,
+    padding: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
-  errorText: {
-    color: 'red',
+  infoTitle: {
     fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 20,
+    fontWeight: 'bold',
+    marginBottom: 5,
   },
-  markerContainer: {
+  infoDescription: {
+    fontSize: 14,
+    color: '#555',
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  routeButton: {
+    flex: 1,
     backgroundColor: '#6200ee',
     padding: 10,
+    marginRight: 5,
     borderRadius: 5,
+    alignItems: 'center',
   },
-  markerText: {
+  routeButtonText: {
     color: '#fff',
     fontWeight: 'bold',
   },
+  closeButton: {
+    flex: 1,
+    backgroundColor: '#d9534f',
+    padding: 10,
+    marginLeft: 5,
+    borderRadius: 5,
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  actionsContainer: {
+    position: 'absolute',
+    bottom: 100,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    zIndex: 10,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6200ee',
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    borderRadius: 30,
+    flex: 1,
+    marginHorizontal: 5,
+    justifyContent: 'center',
+  },
+  actionText: {
+    marginLeft: 10,
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  loaderContainer: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    zIndex: 2,
+  },
 });
+
+
+export default HomeScreen;

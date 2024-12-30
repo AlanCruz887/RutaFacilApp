@@ -1,7 +1,7 @@
+import { API_URL } from '@env';
 import axios from 'axios';
 import Constants from 'expo-constants';
 
-const API_URL = 'http://192.168.1.67:3000/api/auth';
 
 export const loginUser = async (email: string, password: string): Promise<string> => {
   try {
@@ -19,7 +19,7 @@ export const registerUser = async (
     password: string
   ): Promise<void> => {
     try {
-      const response = await axios.post(`${API_URL}/register`, {
+      const response = await axios.post(`${API_URL}/auth/register`, {
         username,
         email,
         password,

@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import { API_URL } from '@env';
 
 interface AuthContextProps {
   isAuthenticated: boolean;
@@ -15,7 +16,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [token, setToken] = useState<string | null>(null);
 
   const login = async (email: string, password: string) => {
-    const response = await axios.post('http://192.168.1.67:3000/api/auth/login', {
+    const response = await axios.post(API_URL+'/auth/login', {
       email,
       password,
     });

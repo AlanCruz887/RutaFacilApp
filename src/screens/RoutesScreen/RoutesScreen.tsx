@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
+import { API_URL } from '@env';
 
 const RoutesScreen: React.FC = ({ navigation }: any) => {
   const [routes, setRoutes] = useState([]);
@@ -11,7 +12,7 @@ const RoutesScreen: React.FC = ({ navigation }: any) => {
   useEffect(() => {
     const fetchRoutes = async () => {
       try {
-        const response = await axios.get('http://192.168.1.67:3000/api/routes/get-routes');
+        const response = await axios.get(API_URL+'/routes/get-routes');
         if (response.data.success) {
           setRoutes(response.data.data); // Guardar las rutas en el estado
         } else {

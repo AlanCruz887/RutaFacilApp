@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import axios from 'axios';
+import { API_URL, GOOGLE_API_KEY } from '@env';
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyAENYjyPAeoOfR1GWtwIHC-dY65VCd_V2o'; // Reemplaza con tu clave API de Google Maps
+const GOOGLE_MAPS_API_KEY = GOOGLE_API_KEY; // Reemplaza con tu clave API de Google Maps
 
 const RouteDetailsScreen: React.FC = ({ route }: any) => {
   const { routeId } = route.params; // Obtener el ID de la ruta desde los parámetros
@@ -16,7 +17,7 @@ const RouteDetailsScreen: React.FC = ({ route }: any) => {
     const fetchRouteDetails = async () => {
       try {
         // Petición para obtener los detalles de la ruta
-        const response = await axios.get(`http://192.168.1.67:3000/api/routes/get-route/${routeId}`);
+        const response = await axios.get(API_URL+`/routes/get-route/${routeId}`);
         if (response.data.success) {
           const data = response.data.data;
           setRouteDetails(data); // Guardar los detalles de la ruta
