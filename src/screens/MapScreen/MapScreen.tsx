@@ -1,17 +1,21 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator, Alert } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import axios from 'axios';
 import { API_URL, GOOGLE_API_KEY } from '@env';
 
-const GOOGLE_MAPS_API_KEY = GOOGLE_API_KEY; // Reemplaza con tu clave de Google Maps
+const GOOGLE_MAPS_API_KEY = GOOGLE_API_KEY;
 
-const MapScreen: React.FC = () => {
+const MapScreen: React.FC = ({ navigation }: any) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [predictions, setPredictions] = useState<any[]>([]);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [routes, setRoutes] = useState<any[]>([]);
+  const [selectedStop, setSelectedStop] = useState<any | null>(null); // Manejar la parada seleccionada
   const [loading, setLoading] = useState(false);
+  const [noRoutesMessage, setNoRoutesMessage] = useState<string | null>(null); // Mensaje "No hay rutas"
+
+  const routeColors = ['#FF0000', '#00FF00', '#0000FF', '#FFA500', '#800080', '#00FFFF']; // Colores para rutas
 
   const handleSearchChange = async (text: string) => {
     setSearchQuery(text);
@@ -51,7 +55,8 @@ const MapScreen: React.FC = () => {
         setLocation({ latitude: lat, longitude: lng });
         setSearchQuery(response.data.result.formatted_address);
         setPredictions([]);
-      } else {
+        setNoRoutesMessage(null); // Limpiar mensaje cuando se selecciona una nueva ubicación
+      } else if (response.data.status === 204) {
         Alert.alert('Error', 'No se pudo obtener la ubicación del lugar seleccionado.');
       }
     } catch (error) {
@@ -71,21 +76,103 @@ const MapScreen: React.FC = () => {
     setLoading(true);
 
     try {
-      const routesResponse = await axios.post(API_URL+'/routes/get-nearby-routes', {
+      const response = await axios.post(`${API_URL}/routes/get-nearby-routes`, {
         lat: location.latitude,
         lon: location.longitude,
       });
-
-      if (routesResponse.data.success) {
-        setRoutes(routesResponse.data.data);
+      if (response.status === 204) {
+        setRoutes([]);
+        setNoRoutesMessage('No se encontraron rutas cercanas. Intenta con otra ubicación.');
+        alert('No se encontraron rutas cercanas. Intenta con otra ubicación.');
+      } else if (response.status === 200 && response.data.success) {
+        const routesWithPolylines = await Promise.all(
+          response.data.data.map(async (route: any) => {
+            const polyline = await fetchRoutePolyline(route.stops);
+            return { ...route, polyline };
+          })
+        );
+        setRoutes(routesWithPolylines);
+        setNoRoutesMessage(null); // Limpiar mensaje si hay rutas
       } else {
-        Alert.alert('Error', 'No se encontraron rutas cercanas.');
+        Alert.alert('Error', response.data.message || 'No se pudieron obtener rutas cercanas.');
       }
     } catch (error) {
-      console.error('Error fetching nearby routes:', error);
+      console.error('Error al buscar rutas cercanas:', error);
       Alert.alert('Error', 'Hubo un problema al buscar rutas cercanas.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchRoutePolyline = async (stops: any[]) => {
+    const origin = `${stops[0].latitude},${stops[0].longitude}`;
+    const destination = `${stops[stops.length - 1].latitude},${stops[stops.length - 1].longitude}`;
+    const waypoints = stops
+      .slice(1, -1)
+      .map((stop) => `${stop.latitude},${stop.longitude}`)
+      .join('|');
+
+    try {
+      const response = await axios.get(
+        `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&waypoints=optimize:false|${waypoints}&key=${GOOGLE_MAPS_API_KEY}`
+      );
+      console.log(`https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&waypoints=optimize:false|${waypoints}&key=${GOOGLE_MAPS_API_KEY}`)
+
+      if (response.data.routes.length) {
+        return decodePolyline(response.data.routes[0].overview_polyline.points);
+      } else {
+        console.error('No se pudo calcular la ruta.');
+        return [];
+      }
+    } catch (error) {
+      console.error('Error al calcular la ruta:', error);
+      return [];
+    }
+  };
+
+  const decodePolyline = (encoded: string) => {
+    let points: any[] = [];
+    let index = 0,
+      len = encoded.length;
+    let lat = 0,
+      lng = 0;
+
+    while (index < len) {
+      let b,
+        shift = 0,
+        result = 0;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+      lng += dlng;
+
+      points.push({
+        latitude: lat / 1e5,
+        longitude: lng / 1e5,
+      });
+    }
+    return points;
+  };
+
+  const handleViewRoutePress = () => {
+    if (selectedStop) {
+      navigation.navigate('Rutas', {
+        screen: 'RouteDetails', // Pantalla dentro de RoutesStackNavigator
+        params: { routeId: selectedStop.route_id },
+      });
     }
   };
 
@@ -126,6 +213,13 @@ const MapScreen: React.FC = () => {
         </View>
       )}
 
+      {/* Mensaje cuando no hay rutas cercanas */}
+      {noRoutesMessage && (
+        <View style={styles.messageContainer}>
+          <Text style={styles.messageText}>{noRoutesMessage}</Text>
+        </View>
+      )}
+
       {/* Mapa */}
       <MapView
         style={styles.map}
@@ -149,34 +243,58 @@ const MapScreen: React.FC = () => {
         {/* Marcador de la ubicación seleccionada */}
         {location && (
           <Marker
-            coordinate={{ latitude: location.latitude, longitude: location.longitude }}
+            coordinate={location}
             title="Ubicación seleccionada"
+            description="Esta es tu ubicación elegida."
+            pinColor="blue" // Diferenciar del resto de los marcadores
           />
         )}
 
-        {/* Marcadores de rutas cercanas */}
-        {routes.map((route) =>
-          route.stops.map((stop: any) => (
-            <Marker
-              key={stop.stop_id}
-              coordinate={{
-                latitude: parseFloat(stop.latitude),
-                longitude: parseFloat(stop.longitude),
-              }}
-              title={`Parada de Ruta ${route.route_name}`}
-            />
-          ))
-        )}
+        {/* Líneas y marcadores de rutas cercanas */}
+        {routes.map((route, index) => {
+          const color = routeColors[index % routeColors.length];
+          return (
+            <React.Fragment key={route.route_id}>
+              {route.polyline && <Polyline coordinates={route.polyline} strokeColor={color} strokeWidth={3} />}
+              {route.stops.map((stop: any) => (
+                <Marker
+                  key={stop.stop_id}
+                  coordinate={{
+                    latitude: parseFloat(stop.latitude),
+                    longitude: parseFloat(stop.longitude),
+                  }}
+                  title={`Parada de Ruta ${route.route_name}`}
+                  description={`ID Ruta: ${route.route_id}`}
+                  onPress={() => setSelectedStop({ ...stop, route_id: route.route_id })}
+                />
+              ))}
+            </React.Fragment>
+          );
+        })}
       </MapView>
 
-      {/* Botón para buscar rutas (solo si hay ubicación seleccionada) */}
-      {location && (
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity style={styles.searchButton} onPress={handleFindRoutesPress}>
-            <Text style={styles.searchButtonText}>Buscar rutas</Text>
-          </TouchableOpacity>
+      {/* Detalles de la parada seleccionada */}
+      {selectedStop && (
+        <View style={styles.infoBox}>
+          <Text style={styles.infoTitle}>{selectedStop.stop_name}</Text>
+          <Text style={styles.infoDescription}>{`Ruta: ${selectedStop.route_id}`}</Text>
+          <View style={styles.buttonRow}>
+            <TouchableOpacity onPress={handleViewRoutePress} style={styles.routeButton}>
+              <Text style={styles.routeButtonText}>Ver Ruta</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setSelectedStop(null)} style={styles.closeButton}>
+              <Text style={styles.closeButtonText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
+
+      {/* Botón para buscar rutas */}
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity style={styles.searchButton} onPress={handleFindRoutesPress}>
+          <Text style={styles.searchButtonText}>Buscar rutas cercanas</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
@@ -201,6 +319,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 3,
     zIndex: 10,
+    marginTop: 60,
   },
   searchInput: {
     flex: 1,
@@ -218,32 +337,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 10,
     zIndex: 10,
-    maxHeight: 150,
+    maxHeight: 170,
+    marginTop: 65,
   },
   predictionItem: {
     padding: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#ddd',
-  },
-  buttonContainer: {
-    position: 'absolute',
-    alignSelf: 'center',
-    justifyContent: 'center',
-    top: '50%',
-    width: '50%',
-    zIndex: 10,
-  },
-  searchButton: {
-    backgroundColor: '#6200ee',
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  searchButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
   },
   loadingContainer: {
     position: 'absolute',
@@ -253,7 +353,92 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 10,
   },
+  messageContainer: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -100 }, { translateY: -20 }],
+    backgroundColor: '#f8d7da',
+    padding: 10,
+    borderRadius: 5,
+    alignItems: 'center',
+  },
+  messageText: {
+    color: '#721c24',
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
   map: {
     ...StyleSheet.absoluteFillObject,
+  },
+  infoBox: {
+    position: 'absolute',
+    top: 180, // Cambiado de bottom: 20 a top: 20 para moverlo a la parte superior
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 10,
+    padding: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    zIndex: 10, // Asegura que esté encima del resto del contenido
+  },  
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  infoDescription: {
+    fontSize: 14,
+    color: '#555',
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  routeButton: {
+    flex: 1,
+    backgroundColor: '#6200ee',
+    padding: 10,
+    marginRight: 5,
+    borderRadius: 5,
+    alignItems: 'center',
+  },
+  routeButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  closeButton: {
+    flex: 1,
+    backgroundColor: '#d9534f',
+    padding: 10,
+    marginLeft: 5,
+    borderRadius: 5,
+    alignItems: 'center',
+  },
+  closeButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  buttonContainer: {
+    position: 'absolute',
+    bottom: 20,
+    left: '25%',
+    right: '25%',
+  },
+  searchButton: {
+    backgroundColor: '#6200ee',
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 90,
+  },
+  searchButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
   },
 });
