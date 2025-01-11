@@ -12,7 +12,10 @@ import {
 import MapView, { Marker, Polyline } from "react-native-maps";
 import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
-import { API_URL, WS_URL, GOOGLE_API_KEY } from "@env";
+import { WS_URL, GOOGLE_API_KEY } from "@env";
+import { Modal, TextInput, Button } from "react-native";
+import * as Notifications from "expo-notifications";
+import api from "src/services/api";
 
 const GOOGLE_MAPS_API_KEY = GOOGLE_API_KEY;
 
@@ -34,13 +37,14 @@ const RouteDetailsScreen: React.FC = ({ route }: any) => {
   const [waitingForLocation, setWaitingForLocation] = useState<boolean>(false);
   const mapRef = useRef<MapView | null>(null);
   const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [notificationTime, setNotificationTime] = useState<number | null>(null);
+  const [currentVehicleId, setCurrentVehicleId] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchRouteDetails = async () => {
       try {
-        const response = await axios.get(
-          `${API_URL}/routes/get-route/${routeId}`
-        );
+        const response = await api.get("/routes/get-route/" + routeId);
         if (response.data.success) {
           const data = response.data.data;
           setRouteDetails(data);
@@ -156,8 +160,8 @@ const RouteDetailsScreen: React.FC = ({ route }: any) => {
   const fetchVehicles = async () => {
     setLoadingVehicles(true);
     try {
-      const response = await axios.get(
-        `${API_URL}/vehicles/get-vehicles-by-route/${routeId}`
+      const response = await api.get(
+        "/vehicles/get-vehicles-by-route/" + routeId
       );
       if (response.data.success) {
         const vehiclesData = response.data.data;
@@ -232,6 +236,135 @@ const RouteDetailsScreen: React.FC = ({ route }: any) => {
     );
   }
 
+  const allowNotifications = async (
+    vehicle_id: number,
+    delay: number = 120000
+  ): Promise<void> => {
+    try {
+      // Verificar y solicitar permisos para notificaciones
+      console.log(delay)
+      let { status } = await Notifications.getPermissionsAsync();
+      if (status !== "granted") {
+        const { status: newStatus } =
+          await Notifications.requestPermissionsAsync();
+        status = newStatus; // Actualizar el estado después de solicitar
+      }
+
+      if (status !== "granted") {
+        console.log("Permiso para notificaciones no concedido.");
+        return;
+      }
+
+      // Obtener el token de Expo Push
+      const { data: token } = await Notifications.getExpoPushTokenAsync();
+
+      // Crear el cuerpo de la solicitud para crear la notificación
+      const createBody = {
+        vehicle_id: vehicle_id,
+        push_token: token,
+      };
+
+      // Intentar crear la notificación
+      await api.post("notifications/create-notification", createBody);
+      console.log("Notificación registrada exitosamente.");
+
+      // Programar la actualización de status_active a "no" después de un tiempo
+      setTimeout(async () => {
+        try {
+          const updateBody = {
+            vehicle_id: vehicle_id,
+            status_active: "no",
+          };
+
+          const updateResponse = await api.put(
+            "/notifications/update-notification",
+            updateBody
+          );
+
+          if (updateResponse.data.success) {
+            console.log("Notificación desactivada exitosamente.");
+          } else {
+            console.error(
+              "Error al desactivar la notificación:",
+              updateResponse.data.message
+            );
+          }
+        } catch (updateError: any) {
+          console.error(
+            "Error al procesar la desactivación de la notificación:",
+            updateError.response?.data?.message || updateError.message
+          );
+        }
+      }, delay); // Tiempo en milisegundos (por defecto 120000 = 2 minutos)
+    } catch (error: any) {
+      // Manejar el error si ya está registrada (HTTP 409)
+      if (error.response?.status === 409) {
+        try {
+          // Crear el cuerpo de la solicitud para actualizar la notificación
+          const updateBody = {
+            vehicle_id: vehicle_id,
+            status_active: "yes",
+          };
+
+          // Hacer la solicitud PUT para actualizar la notificación
+          const updateResponse = await api.put(
+            "/notifications/update-notification",
+            updateBody
+          );
+
+          if (updateResponse.data.success) {
+            console.log("Notificación actualizada exitosamente.");
+
+            // Programar la desactivación después de un tiempo
+            setTimeout(async () => {
+              try {
+                const disableBody = {
+                  vehicle_id: vehicle_id,
+                  status_active: "no",
+                };
+
+                const disableResponse = await api.put(
+                  "/notifications/update-notification",
+                  disableBody
+                );
+
+                if (disableResponse.data.success) {
+                  console.log("Notificación desactivada exitosamente.");
+                } else {
+                  console.error(
+                    "Error al desactivar la notificación:",
+                    disableResponse.data.message
+                  );
+                }
+              } catch (disableError: any) {
+                console.error(
+                  "Error al procesar la desactivación de la notificación:",
+                  disableError.response?.data?.message || disableError.message
+                );
+              }
+            }, delay); // Tiempo en milisegundos
+          } else {
+            console.error(
+              "Error al actualizar la notificación:",
+              updateResponse.data.message
+            );
+          }
+        } catch (updateError: any) {
+          console.error(
+            "Error al procesar la actualización de la notificación:",
+            updateError.response?.data?.message || updateError.message
+          );
+        }
+      } else {
+        // Manejar otros errores
+        console.error(
+          "Error al procesar la notificación:",
+          error.response?.data?.message || error.message
+        );
+      }
+    }
+  };
+
   return (
     <View style={styles.container}>
       <MapView
@@ -263,28 +396,25 @@ const RouteDetailsScreen: React.FC = ({ route }: any) => {
           />
         ))}
 
-{selectedVehicleLocation && (
-  <Marker
-    coordinate={{
-      latitude: selectedVehicleLocation.lat,
-      longitude: selectedVehicleLocation.lon,
-    }}
-    title="Vehículo"
-    description={
-      (() => {
-        const vehicle = vehicles.find(
-          (v) => v.vehicle_id === selectedVehicleLocation.vehicleId
-        );
-        const model = vehicle?.model || "Modelo no disponible";
-        const plate = vehicle?.plate_number || "Placas no disponibles";
-        return `${model}\nPlacas: ${plate}`; // Salto de línea con \n
-      })()
-    }
-  >
-    <Ionicons name="car" size={50} color="black" />
-  </Marker>
-)}
-
+        {selectedVehicleLocation && (
+          <Marker
+            coordinate={{
+              latitude: selectedVehicleLocation.lat,
+              longitude: selectedVehicleLocation.lon,
+            }}
+            title="Vehículo"
+            description={(() => {
+              const vehicle = vehicles.find(
+                (v) => v.vehicle_id === selectedVehicleLocation.vehicleId
+              );
+              const model = vehicle?.model || "Modelo no disponible";
+              const plate = vehicle?.plate_number || "Placas no disponibles";
+              return `${model}\nPlacas: ${plate}`; // Salto de línea con \n
+            })()}
+          >
+            <Ionicons name="car" size={32} color="black" />
+          </Marker>
+        )}
       </MapView>
 
       {waitingForLocation && (
@@ -323,19 +453,88 @@ const RouteDetailsScreen: React.FC = ({ route }: any) => {
                 <View style={styles.vehicleItem}>
                   <Text>{`Modelo: ${item.model}`}</Text>
                   <Text>{`Placas: ${item.plate_number}`}</Text>
-                  <TouchableOpacity
-                    style={styles.locationButton}
-                    onPress={() => handleSelectVehicle(item.vehicle_id)}
-                  >
-                    <Ionicons name="location-outline" size={18} color="#fff" />
-                    <Text style={styles.locationButtonText}>Ver Ubicación</Text>
-                  </TouchableOpacity>
+
+                  {/* Botón para Ver Ubicación y Ver Notificaciones */}
+                  <View style={styles.buttonContainer}>
+                    {/* Botón para Ver Ubicación */}
+                    <TouchableOpacity
+                      style={styles.locationButton}
+                      onPress={() => handleSelectVehicle(item.vehicle_id)}
+                    >
+                      <Ionicons
+                        name="location-outline"
+                        size={18}
+                        color="#fff"
+                      />
+                      <Text style={styles.locationButtonText}>
+                        Ver Ubicación
+                      </Text>
+                    </TouchableOpacity>
+
+                    {/* Botón para Ver Notificaciones */}
+                    <TouchableOpacity
+                      style={styles.notificationButton}
+                      onPress={() => {
+                        setCurrentVehicleId(item.vehicle_id); // Guardar el ID del vehículo seleccionado
+                        setModalVisible(true); // Mostrar el modal
+                      }}
+                    >
+                      <Ionicons
+                        name="notifications-outline"
+                        size={18}
+                        color="#fff"
+                      />
+                      <Text style={styles.notificationButtonText}>
+                        Ver Notificaciones
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
             />
           )}
         </View>
       )}
+      <Modal
+  animationType="slide"
+  transparent={true}
+  visible={modalVisible}
+  onRequestClose={() => setModalVisible(false)}
+>
+  <View style={styles.modalContainer}>
+    <View style={styles.modalContent}>
+      <Text style={styles.modalTitle}>
+        Selecciona el tiempo para recibir notificaciones:
+      </Text>
+
+      <View style={styles.timeButtonsContainer}>
+        {[5, 10, 15, 20].map((time) => (
+          <TouchableOpacity
+            key={time}
+            style={styles.timeButton}
+            onPress={() => {
+              if (currentVehicleId) {
+                allowNotifications(currentVehicleId, time * 60000); // Convertir minutos a ms
+                setModalVisible(false);
+              }
+            }}
+          >
+            <Text style={styles.timeButtonText}>{time} minutos</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <TouchableOpacity
+        style={styles.cancelButton}
+        onPress={() => setModalVisible(false)}
+      >
+        <Text style={styles.cancelButtonText}>Cancelar</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+</Modal>
+
+
     </View>
   );
 };
@@ -404,4 +603,86 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(255, 255, 255, 0.8)",
   },
+  notificationButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#03a9f4",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  notificationButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    marginLeft: 6,
+  },
+  buttonContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 10,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.7)", // Fondo más oscuro
+  },
+  modalContent: {
+    width: "85%",
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 20,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 10, // Sombra para Android
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  timeButtonsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-around",
+    width: "100%",
+  },
+  timeButton: {
+    backgroundColor: "#6200ee",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    margin: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  timeButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+    textAlign: "center",
+  },
+  cancelButton: {
+    marginTop: 20,
+    backgroundColor: "#f44336",
+    paddingVertical: 10,
+    paddingHorizontal: 30,
+    borderRadius: 10,
+  },
+  cancelButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+    textAlign: "center",
+  },
+  
+  
 });

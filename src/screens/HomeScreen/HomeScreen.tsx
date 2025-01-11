@@ -5,7 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
 import axios from 'axios';
-import { API_URL, GOOGLE_API_KEY } from '@env';
+import { GOOGLE_API_KEY } from '@env';
+import api from 'src/services/api';
 
 const GOOGLE_MAPS_API_KEY = GOOGLE_API_KEY; // Reemplaza con tu clave API de Google Maps
 
@@ -118,7 +119,7 @@ const HomeScreen: React.FC = ({ navigation }: any) => {
     setLoading(true);
     try {
       const { latitude, longitude } = location.coords;
-      const response = await axios.post(API_URL+'/routes/get-nearby-routes', {
+      const response = await api.post('/routes/get-nearby-routes', {
         lat: latitude,
         lon: longitude,
       });

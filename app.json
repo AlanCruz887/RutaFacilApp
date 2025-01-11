@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "RutaFacilApp",
-    "slug": "RutaFacilApp",
+    "slug": "ruta-facil",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -25,7 +25,11 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "apiBaseUrl": "http://192.168.1.67:3000/api"
-    }
+      "apiBaseUrl": "http://192.168.1.67:3000/api",
+      "eas": {
+        "projectId": "4108581b-6585-4786-bc1b-cba51e833f38"
+      }
+    },
+    "owner": "alancruz887"
   }
 }

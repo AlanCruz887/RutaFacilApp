@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import axios from 'axios';
-import { API_URL, GOOGLE_API_KEY } from '@env';
+import {GOOGLE_API_KEY } from '@env';
+import api from 'src/services/api';
 
 const GOOGLE_MAPS_API_KEY = GOOGLE_API_KEY;
 
@@ -76,7 +77,7 @@ const MapScreen: React.FC = ({ navigation }: any) => {
     setLoading(true);
 
     try {
-      const response = await axios.post(`${API_URL}/routes/get-nearby-routes`, {
+      const response = await api.post("routes/get-nearby-routes", {
         lat: location.latitude,
         lon: location.longitude,
       });

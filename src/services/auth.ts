@@ -1,6 +1,5 @@
 import { API_URL } from '@env';
 import axios from 'axios';
-import Constants from 'expo-constants';
 
 
 export const loginUser = async (email: string, password: string): Promise<string> => {
@@ -9,7 +8,7 @@ export const loginUser = async (email: string, password: string): Promise<string
     const { token } = response.data;
     return token;
   } catch (error: any) {
-    throw new Error(error.response?.data?.message + 'jhj' || 'Error en la autenticación');
+    throw new Error(error.response?.data?.message  || 'Error en la autenticación');
   }
 };
 

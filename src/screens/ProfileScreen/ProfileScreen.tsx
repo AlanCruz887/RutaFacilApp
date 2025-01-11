@@ -13,8 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useAuth } from '../../services/AuthContext';
-import axios from 'axios';
-import { API_URL } from '@env';
+import api from 'src/services/api';
 
 const ProfileScreen: React.FC = ({ navigation }: any) => {
   const { isAuthenticated, logout, token } = useAuth(); // Usar el token desde AuthContext
@@ -31,7 +30,7 @@ const ProfileScreen: React.FC = ({ navigation }: any) => {
     // Realizar la petición para obtener los datos del usuario
     const fetchUserData = async () => {
       try {
-        const response = await axios.get(API_URL+'/users/get-user/', {
+        const response = await api.get('/users/get-user/', {
           headers: {
             'x-access-token': token, // Enviar el token en los headers
           },
