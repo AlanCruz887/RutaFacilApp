@@ -33,6 +33,7 @@ const RouteDetailsScreen: React.FC = ({ route }: any) => {
   );
   const [selectedVehicleLocation, setSelectedVehicleLocation] =
     useState<any>(null);
+
   const [focusedVehicleId, setFocusedVehicleId] = useState<number | null>(null);
   const [waitingForLocation, setWaitingForLocation] = useState<boolean>(false);
   const mapRef = useRef<MapView | null>(null);
@@ -188,6 +189,7 @@ const RouteDetailsScreen: React.FC = ({ route }: any) => {
 
   const handleSelectVehicle = (vehicleId: number) => {
     setFocusedVehicleId(vehicleId);
+    setShowVehicles(false); // Ocultar la lista de vehículos al seleccionar
   };
 
   const decodePolyline = (encoded: string) => {
@@ -242,7 +244,7 @@ const RouteDetailsScreen: React.FC = ({ route }: any) => {
   ): Promise<void> => {
     try {
       // Verificar y solicitar permisos para notificaciones
-      console.log(delay)
+      console.log(delay);
       let { status } = await Notifications.getPermissionsAsync();
       if (status !== "granted") {
         const { status: newStatus } =
@@ -267,6 +269,15 @@ const RouteDetailsScreen: React.FC = ({ route }: any) => {
       // Intentar crear la notificación
       await api.post("notifications/create-notification", createBody);
       console.log("Notificación registrada exitosamente.");
+
+      // Convertir el tiempo de delay de milisegundos a minutos
+      const delayInMinutes = Math.round(delay / 60000);
+
+      // Mostrar la alerta con el tiempo en minutos
+      Alert.alert(
+        "Notificación activada",
+        `Recibirás notificaciones cada ${delayInMinutes} minutos.`
+      );
 
       // Programar la actualización de status_active a "no" después de un tiempo
       setTimeout(async () => {
@@ -496,45 +507,43 @@ const RouteDetailsScreen: React.FC = ({ route }: any) => {
         </View>
       )}
       <Modal
-  animationType="slide"
-  transparent={true}
-  visible={modalVisible}
-  onRequestClose={() => setModalVisible(false)}
->
-  <View style={styles.modalContainer}>
-    <View style={styles.modalContent}>
-      <Text style={styles.modalTitle}>
-        Selecciona el tiempo para recibir notificaciones:
-      </Text>
-
-      <View style={styles.timeButtonsContainer}>
-        {[5, 10, 15, 20].map((time) => (
-          <TouchableOpacity
-            key={time}
-            style={styles.timeButton}
-            onPress={() => {
-              if (currentVehicleId) {
-                allowNotifications(currentVehicleId, time * 60000); // Convertir minutos a ms
-                setModalVisible(false);
-              }
-            }}
-          >
-            <Text style={styles.timeButtonText}>{time} minutos</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <TouchableOpacity
-        style={styles.cancelButton}
-        onPress={() => setModalVisible(false)}
+        animationType="slide"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
       >
-        <Text style={styles.cancelButtonText}>Cancelar</Text>
-      </TouchableOpacity>
-    </View>
-  </View>
-</Modal>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              Selecciona el tiempo para recibir notificaciones:
+            </Text>
 
+            <View style={styles.timeButtonsContainer}>
+              {[5, 10, 15, 20].map((time) => (
+                <TouchableOpacity
+                  key={time}
+                  style={styles.timeButton}
+                  onPress={() => {
+                    if (currentVehicleId) {
+                      allowNotifications(currentVehicleId, time * 60000); // Convertir minutos a ms
+                      setModalVisible(false);
+                    }
+                  }}
+                >
+                  <Text style={styles.timeButtonText}>{time} minutos</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setModalVisible(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -683,6 +692,4 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     textAlign: "center",
   },
-  
-  
 });
