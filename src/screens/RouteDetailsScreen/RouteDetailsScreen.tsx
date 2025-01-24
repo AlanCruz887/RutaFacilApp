@@ -16,10 +16,11 @@ import { WS_URL, GOOGLE_API_KEY } from "@env";
 import { Modal, TextInput, Button } from "react-native";
 import * as Notifications from "expo-notifications";
 import api from "src/services/api";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const GOOGLE_MAPS_API_KEY = GOOGLE_API_KEY;
 
-const RouteDetailsScreen: React.FC = ({ route }: any) => {
+const RouteDetailsScreen: React.FC = ({ route, navigation }: any) => {
   const { routeId } = route.params;
   const [routeDetails, setRouteDetails] = useState<any>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<any>(null);
@@ -40,7 +41,52 @@ const RouteDetailsScreen: React.FC = ({ route }: any) => {
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [notificationTime, setNotificationTime] = useState<number | null>(null);
+  const [hasToken, setHasToken] = useState<boolean>(false); // Nuevo estado para el token
   const [currentVehicleId, setCurrentVehicleId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const checkToken = async () => {
+      try {
+        const token = await AsyncStorage.getItem('token');
+        setHasToken(!!token); // Si hay token, hasToken será true
+      } catch (error) {
+        console.error('Error verificando el token:', error);
+        setHasToken(false);
+      }
+    };
+
+    checkToken();
+  }, []);
+
+  const handleNotificationPress = async (vehicleId: number) => {
+    try {
+      const token = await AsyncStorage.getItem('token'); // Verifica si hay un token
+      if (!token) {
+        Alert.alert(
+          'Inicia sesión para continuar',
+          'Para habilitar las notificaciones, por favor inicia sesión en tu cuenta. ¿Deseas ir al perfil ahora?',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { 
+              text: 'Ir al perfil', 
+              onPress: () => navigation.navigate('Cuenta') // Redirige al tab de "Cuenta"
+            },
+          ]
+        );
+        return;
+      }
+
+      // Si hay un token, permite mostrar el modal
+      setCurrentVehicleId(vehicleId);
+      setModalVisible(true);
+    } catch (error) {
+      console.error('Error verificando el token:', error);
+      Alert.alert(
+        'Error',
+        'Ocurrió un problema al verificar tu autenticación. Inténtalo nuevamente.'
+      );
+    }
+  };
 
   useEffect(() => {
     const fetchRouteDetails = async () => {
@@ -485,10 +531,7 @@ const RouteDetailsScreen: React.FC = ({ route }: any) => {
                     {/* Botón para Ver Notificaciones */}
                     <TouchableOpacity
                       style={styles.notificationButton}
-                      onPress={() => {
-                        setCurrentVehicleId(item.vehicle_id); // Guardar el ID del vehículo seleccionado
-                        setModalVisible(true); // Mostrar el modal
-                      }}
+                      onPress={() => handleNotificationPress(item.vehicle_id)}
                     >
                       <Ionicons
                         name="notifications-outline"

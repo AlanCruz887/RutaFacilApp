@@ -91,8 +91,8 @@ const MapScreen: React.FC = ({ navigation }: any) => {
             const polyline = await fetchRoutePolyline(route.stops);
             return { ...route, polyline };
           })
-        );
-        setRoutes(routesWithPolylines);
+      );
+      setRoutes(routesWithPolylines);      
         setNoRoutesMessage(null); // Limpiar mensaje si hay rutas
       } else {
         Alert.alert('Error', response.data.message || 'No se pudieron obtener rutas cercanas.');
@@ -117,7 +117,6 @@ const MapScreen: React.FC = ({ navigation }: any) => {
       const response = await axios.get(
         `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&waypoints=optimize:false|${waypoints}&key=${GOOGLE_MAPS_API_KEY}`
       );
-      console.log(`https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&waypoints=optimize:false|${waypoints}&key=${GOOGLE_MAPS_API_KEY}`)
 
       if (response.data.routes.length) {
         return decodePolyline(response.data.routes[0].overview_polyline.points);
@@ -253,25 +252,26 @@ const MapScreen: React.FC = ({ navigation }: any) => {
 
         {/* Líneas y marcadores de rutas cercanas */}
         {routes.map((route, index) => {
-          const color = routeColors[index % routeColors.length];
-          return (
-            <React.Fragment key={route.route_id}>
-              {route.polyline && <Polyline coordinates={route.polyline} strokeColor={color} strokeWidth={3} />}
-              {route.stops.map((stop: any) => (
-                <Marker
-                  key={stop.stop_id}
-                  coordinate={{
-                    latitude: parseFloat(stop.latitude),
-                    longitude: parseFloat(stop.longitude),
-                  }}
-                  title={`Parada de Ruta ${route.route_name}`}
-                  description={`ID Ruta: ${route.route_id}`}
-                  onPress={() => setSelectedStop({ ...stop, route_id: route.route_id })}
-                />
-              ))}
-            </React.Fragment>
-          );
-        })}
+  const color = routeColors[index % routeColors.length];
+  return (
+    <React.Fragment key={route.route_id}>
+      {route.polyline && <Polyline coordinates={route.polyline} strokeColor={color} strokeWidth={3} />}
+      {route.stops.map((stop: any) => (
+        <Marker
+          key={stop.stop_id}
+          coordinate={{
+            latitude: parseFloat(stop.latitude),
+            longitude: parseFloat(stop.longitude),
+          }}
+          title={`Parada de Ruta ${route.route_name}`}
+          description={`ID Ruta: ${route.route_id}`}
+          onPress={() => setSelectedStop({ ...stop, route_id: route.route_id })}
+        />
+      ))}
+    </React.Fragment>
+  );
+})}
+
       </MapView>
 
       {/* Detalles de la parada seleccionada */}

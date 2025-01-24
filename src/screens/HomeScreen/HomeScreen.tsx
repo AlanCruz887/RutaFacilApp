@@ -16,6 +16,14 @@ const HomeScreen: React.FC = ({ navigation }: any) => {
   const [selectedStop, setSelectedStop] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const mapRef = useRef<MapView | null>(null);
+  const [refresh, setRefresh] = useState(false);
+  const [mapRegion, setMapRegion] = useState({
+    latitude: 20.17427,
+    longitude: -98.04875,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05,
+});
+
 
   const routeColors = ['#FF0000', '#00FF00', '#0000FF', '#FFA500', '#800080', '#00FFFF'];
 
@@ -112,39 +120,48 @@ const HomeScreen: React.FC = ({ navigation }: any) => {
 
   const handleExploreRoutesPress = async () => {
     if (!location) {
-      Alert.alert('Ubicación no disponible', 'Activa la ubicación para buscar rutas cercanas.');
-      return;
+        Alert.alert('Ubicación no disponible', 'Activa la ubicación para buscar rutas cercanas.');
+        return;
     }
 
     setLoading(true);
     try {
-      const { latitude, longitude } = location.coords;
-      const response = await api.post('/routes/get-nearby-routes', {
-        lat: latitude,
-        lon: longitude,
-      });
+        const { latitude, longitude } = location.coords;
+        const response = await api.post('/routes/get-nearby-routes', {
+            lat: latitude,
+            lon: longitude,
+        });
 
-      if (response.data.success) {
-        const fetchedRoutes = response.data.data;
+        if (response.data.success) {
+            const fetchedRoutes = response.data.data;
 
-        const routesWithPolylines = await Promise.all(
-          fetchedRoutes.map(async (route: any) => {
-            const polyline = await fetchRoutePolyline(route.stops);
-            return { ...route, polyline };
-          })
-        );
+            const routesWithPolylines = await Promise.all(
+                fetchedRoutes.map(async (route: any) => {
+                    const polyline = await fetchRoutePolyline(route.stops);
+                    return { ...route, polyline };
+                })
+            );
 
-        setRoutes(routesWithPolylines);
-      } else {
-        Alert.alert('Error', response.data.message || 'No se encontraron rutas cercanas.');
-      }
+            setRoutes(routesWithPolylines);
+
+            // Mantén el enfoque en la ubicación actual
+            if (mapRef.current) {
+                mapRef.current.animateCamera({
+                    center: { latitude, longitude },
+                });
+            }
+        } else {
+            Alert.alert('Error', response.data.message || 'No se encontraron rutas cercanas.');
+        }
     } catch (err) {
-      console.error('Error en Axios:', err);
-      Alert.alert('Error', 'Hubo un problema al obtener las rutas cercanas.');
+        console.error('Error en Axios:', err);
+        Alert.alert('Error', 'Hubo un problema al obtener las rutas cercanas.');
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  };
+};
+
+
 
   const handleMyLocationPress = () => {
     if (location && mapRef.current) {
@@ -169,7 +186,18 @@ const HomeScreen: React.FC = ({ navigation }: any) => {
       });
     }
   };
-  
+
+  useEffect(() => {
+    if (location) {
+        setMapRegion((prev) => ({
+            ...prev,
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+        }));
+    }
+}, [location]);
+
+
 
   return (
     <View style={styles.container}>
@@ -184,16 +212,14 @@ const HomeScreen: React.FC = ({ navigation }: any) => {
       </View>
 
       <View style={styles.mapContainer}>
-        <MapView
-          ref={mapRef}
-          style={styles.map}
-          initialRegion={{
-            latitude: 20.17427,
-            longitude: -98.04875,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
-          }}
-        >
+      <MapView
+    ref={mapRef}
+    style={styles.map}
+    region={mapRegion} // Usa el estado actual del mapa
+    onRegionChangeComplete={(region) => setMapRegion(region)} // Actualiza el estado al cambiar manualmente la región
+>
+
+
           {location && (
             <Marker
               coordinate={{

@@ -16,46 +16,43 @@ import { useAuth } from '../../services/AuthContext';
 import api from 'src/services/api';
 
 const ProfileScreen: React.FC = ({ navigation }: any) => {
-  const { isAuthenticated, logout, token } = useAuth(); // Usar el token desde AuthContext
-  const [userProfile, setUserProfile] = useState<any>(null); // Estado para almacenar los datos del usuario
-  const [loading, setLoading] = useState<boolean>(true); // Estado para manejar el indicador de carga
-  const [error, setError] = useState<string | null>(null); // Estado para manejar errores
+  const { isAuthenticated, logout, token, loading: authLoading } = useAuth(); // Incluir estado de carga
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (authLoading) return; // Esperar a que se cargue el estado de autenticación
+
     if (!isAuthenticated) {
-      navigation.replace('Login'); // Redirige al inicio de sesión si no está autenticado
+      navigation.replace('Login');
       return;
     }
 
-    // Realizar la petición para obtener los datos del usuario
     const fetchUserData = async () => {
       try {
         const response = await api.get('/users/get-user/', {
           headers: {
-            'x-access-token': token, // Enviar el token en los headers
+            'x-access-token': token,
           },
         });
 
         if (response.data.success) {
-          setUserProfile(response.data.data); // Guardar los datos del usuario
+          setUserProfile(response.data.data);
         } else {
           setError(response.data.message || 'Error al obtener los datos del usuario');
         }
       } catch (err: any) {
         setError(err.message || 'Error al realizar la petición');
       } finally {
-        setLoading(false); // Desactivar el indicador de carga
+        setLoading(false);
       }
     };
 
     fetchUserData();
-  }, [isAuthenticated, navigation, token]);
+  }, [isAuthenticated, authLoading, navigation, token]);
 
-  if (!isAuthenticated) {
-    return null; // Evita renderizar contenido mientras redirige
-  }
-
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <View style={styles.loaderContainer}>
         <ActivityIndicator size="large" color="#6200ee" />
@@ -76,52 +73,42 @@ const ProfileScreen: React.FC = ({ navigation }: any) => {
   }
 
   if (!userProfile) {
-    return null; // Manejo de errores adicional si no hay datos del usuario
+    return null;
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Mi Cuenta</Text>
       </View>
 
-      {/* Perfil */}
       <ScrollView contentContainerStyle={styles.scrollViewContent}>
         <View style={styles.profileContainer}>
           <Text style={styles.profileTitle}>Perfil de Usuario</Text>
 
-          {/* Foto de perfil */}
           <View style={styles.profileImageContainer}>
             {userProfile.profileImage ? (
-              <Image
-                source={{ uri: userProfile.profileImage }}
-                style={styles.profileImage}
-              />
+              <Image source={{ uri: userProfile.profileImage }} style={styles.profileImage} />
             ) : (
               <Ionicons name="person-circle-outline" size={80} color="#6200ee" />
             )}
           </View>
 
-          {/* Nombre de Usuario */}
           <View style={styles.profileCard}>
             <Text style={styles.cardTitle}>Nombre de Usuario</Text>
             <Text style={styles.cardValue}>{userProfile.username}</Text>
           </View>
 
-          {/* Correo Electrónico */}
           <View style={styles.profileCard}>
             <Text style={styles.cardTitle}>Correo Electrónico</Text>
             <Text style={styles.cardValue}>{userProfile.email}</Text>
           </View>
 
-          {/* Estado de la Cuenta */}
           <View style={styles.profileCard}>
             <Text style={styles.cardTitle}>Estado de la Cuenta</Text>
             <Text style={styles.cardValue}>{userProfile.status}</Text>
           </View>
 
-          {/* Logout Button */}
           <TouchableOpacity style={styles.logoutButton} onPress={logout}>
             <Ionicons name="log-out-outline" size={20} color="#fff" />
             <Text style={styles.logoutText}>Cerrar sesión</Text>
@@ -131,6 +118,7 @@ const ProfileScreen: React.FC = ({ navigation }: any) => {
     </SafeAreaView>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {
